@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="RE:CONNECT">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💑</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!--
   ════════════════════════════════════════
   Supabase 설정 가이드
@@ -56,21 +57,56 @@
   alter table public.repair_history enable row level security;
   create policy "own" on public.repair_history using (auth.uid()=uid) with check (auth.uid()=uid);
 
-  ─── 파트너 연결 기능 (파트너 공유를 원하면 아래 SQL 추가 실행) ───
+  ─── 파트너 연결 + bond/house 테이블 (아래 SQL 전체 실행) ───
+
   alter table public.users add column if not exists partner_code text unique;
   alter table public.users add column if not exists partner_id uuid;
-  -- users 정책: 파트너 코드로 조회 허용
+
   drop policy if exists "own" on public.users;
   create policy "select_auth"  on public.users for select to authenticated using (true);
   create policy "insert_own"   on public.users for insert  with check (auth.uid()=id);
   create policy "update_own"   on public.users for update  using (auth.uid()=id) with check (auth.uid()=id);
-  -- daily_data 정책: 파트너 데이터 조회 허용
+
   drop policy if exists "own" on public.daily_data;
   create policy "select_partner" on public.daily_data for select using (
     auth.uid()=uid OR
     exists (select 1 from public.users where id=auth.uid() and partner_id=daily_data.uid)
   );
   create policy "modify_own" on public.daily_data for all using (auth.uid()=uid) with check (auth.uid()=uid);
+
+  create table if not exists public.bond_data (
+    id uuid default gen_random_uuid() primary key,
+    uid uuid references auth.users on delete cascade not null,
+    date text not null,
+    warm int default 0,
+    friction int default 0,
+    horsemen jsonb default '[]',
+    lovemap text,
+    constraint uq_bond_uid_date unique(uid, date)
+  );
+  alter table public.bond_data enable row level security;
+  drop policy if exists "own" on public.bond_data;
+  create policy "select_partner" on public.bond_data for select using (
+    auth.uid()=uid OR
+    exists (select 1 from public.users where id=auth.uid() and partner_id=bond_data.uid)
+  );
+  create policy "modify_own" on public.bond_data for all using (auth.uid()=uid) with check (auth.uid()=uid);
+
+  create table if not exists public.house_data (
+    id uuid default gen_random_uuid() primary key,
+    uid uuid references auth.users on delete cascade not null unique,
+    rooms jsonb default '{}',
+    horsemen_battle jsonb default '{}',
+    bucket_list jsonb default '[]',
+    bedroom_checks jsonb default '{}'
+  );
+  alter table public.house_data enable row level security;
+  drop policy if exists "own" on public.house_data;
+  create policy "select_partner" on public.house_data for select using (
+    auth.uid()=uid OR
+    exists (select 1 from public.users where id=auth.uid() and partner_id=house_data.uid)
+  );
+  create policy "modify_own" on public.house_data for all using (auth.uid()=uid) with check (auth.uid()=uid);
   ─────────────────────────────────────────
 
   3. Authentication → Settings → "Enable email confirmations" OFF
@@ -83,7 +119,6 @@
   5. 아래 SUPABASE_URL / SUPABASE_ANON_KEY 교체
   ════════════════════════════════════════
 -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --primary: #FF6B6B;
@@ -167,15 +202,14 @@ textarea { resize: none; }
   box-shadow: 0 -2px 16px rgba(0,0,0,0.06); z-index: 100;
 }
 #bottom-nav.hidden { display: none; }
-.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--text-sub); font-size: 10px; font-weight: 600; transition: color 0.2s; min-height: 44px; }
+.nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--text-sub); font-size: 9px; font-weight: 600; transition: color 0.2s; min-height: 44px; }
 .nav-item.active { color: var(--primary); }
-.nav-icon { font-size: 22px; line-height: 1; }
+.nav-icon { font-size: 20px; line-height: 1; }
 
 /* ══ AUTH ══ */
 #screen-auth { background: var(--bg); }
-.auth-hero { position: relative; width: 100%; height: 280px; overflow: hidden; }
-.auth-hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.auth-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, rgba(255,245,240,0.85) 80%, var(--bg) 100%); }
+.auth-hero { position: relative; width: 100%; height: 280px; overflow: hidden; background: linear-gradient(135deg, #FFD4C2 0%, #FFBCAD 40%, #FFA59A 70%, #FF8E8E 100%); }
+.auth-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, rgba(255,245,240,0.7) 75%, var(--bg) 100%); }
 .auth-hero-text { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; padding: 0 24px; }
 .auth-hero-text h1 { font-size: 30px; font-weight: 800; color: var(--primary); letter-spacing: -0.04em; margin-bottom: 4px; text-shadow: 0 1px 8px rgba(255,255,255,0.8); }
 .auth-hero-text p { font-size: 14px; color: var(--text-sub); font-weight: 500; }
@@ -416,6 +450,64 @@ textarea { resize: none; }
 .partner-connected-badge .pcb-sub { font-size: 12px; color: var(--text-sub); }
 .disconnect-btn { margin-left: auto; font-size: 12px; color: #FF6B6B; font-weight: 700; padding: 4px 8px; border-radius: 6px; background: #FFF0F0; }
 
+/* ══ 우리 집 ══ */
+#screen-house { background: var(--bg); }
+.house-header { background: linear-gradient(135deg, #FF8E53, #FFD700); padding: 28px 20px 22px; color: #fff; }
+.house-header h2 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.house-header p { font-size: 13px; opacity: 0.88; }
+.house-visual-card { margin: 14px 16px 0; background: var(--bg-card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-sm); text-align: center; }
+.house-emoji { font-size: 68px; display: block; margin-bottom: 12px; transition: all 0.4s; }
+.house-room-badges { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.room-badge { font-size: 22px; opacity: 0.25; transition: opacity 0.4s; }
+.room-badge.done { opacity: 1; }
+.house-progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+.house-progress-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--secondary)); border-radius: 4px; transition: width 0.6s ease; }
+.house-progress-label { font-size: 13px; color: var(--text-sub); font-weight: 600; }
+.room-card { margin: 12px 16px 0; background: var(--bg-card); border-radius: var(--radius-sm); padding: 16px; box-shadow: var(--shadow-sm); }
+.room-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.room-card-emoji { font-size: 24px; }
+.room-card-info { flex: 1; }
+.room-card-title { font-size: 15px; font-weight: 800; color: var(--text); }
+.room-card-source { font-size: 12px; color: var(--text-sub); margin-top: 2px; }
+.room-card-done-badge { font-size: 12px; font-weight: 700; color: #4CAF50; background: #F0FAF0; padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+.room-card-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+.room-card-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.5s ease; }
+.room-card-meta { font-size: 12px; color: var(--text-sub); font-weight: 500; }
+.bedroom-checklist { margin: 12px 0 0; }
+.bedroom-mission { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); font-size: 14px; font-weight: 600; color: var(--text); cursor: pointer; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+.bedroom-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; transition: all 0.2s; }
+.bedroom-check.checked { background: var(--primary); border-color: var(--primary); color: #fff; }
+.horsemen-battle-section { margin: 12px 16px 0; }
+.battle-section-title { font-size: 15px; font-weight: 800; color: var(--text); margin-bottom: 10px; }
+.battle-card { background: var(--bg-card); border-radius: var(--radius-sm); padding: 16px; box-shadow: var(--shadow-sm); margin-bottom: 10px; border-left: 4px solid #FF4444; }
+.battle-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.battle-emoji { font-size: 26px; }
+.battle-title { font-size: 15px; font-weight: 800; color: #FF4444; }
+.battle-hp-bar { height: 8px; background: #FFE0E0; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+.battle-hp-fill { height: 100%; background: linear-gradient(90deg, #FF4444, #FF8E53); border-radius: 4px; transition: width 0.5s ease; }
+.battle-hp-label { font-size: 12px; color: var(--text-sub); font-weight: 600; margin-bottom: 12px; }
+.antidote-options { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.antidote-option { padding: 10px 12px; border-radius: var(--radius-sm); border: 2px solid #FFD600; background: #FFFDE7; font-size: 13px; color: #795548; text-align: left; font-weight: 500; transition: all 0.15s; line-height: 1.5; }
+.antidote-option:active { background: #FFF8DC; border-color: var(--secondary); }
+.antidote-direct { display: flex; gap: 8px; margin-top: 6px; }
+.antidote-direct-input { flex: 1; padding: 10px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; color: var(--text); background: var(--bg); min-height: 44px; }
+.antidote-direct-input:focus { border-color: var(--secondary); }
+.antidote-submit-btn { padding: 10px 14px; border-radius: var(--radius-sm); background: var(--secondary); color: #fff; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.battle-no-enemy { background: var(--bg-card); border-radius: var(--radius-sm); padding: 20px; text-align: center; box-shadow: var(--shadow-sm); }
+.battle-no-enemy p { font-size: 14px; color: var(--text-sub); line-height: 1.6; }
+.bucket-section { margin: 12px 16px 12px; background: var(--bg-card); border-radius: var(--radius-sm); padding: 16px; box-shadow: var(--shadow-sm); }
+.bucket-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.bucket-input { flex: 1; padding: 10px 12px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; color: var(--text); background: var(--bg); min-height: 44px; }
+.bucket-input:focus { border-color: var(--primary); }
+.bucket-add-btn { padding: 10px 14px; border-radius: var(--radius-sm); background: var(--primary); color: #fff; font-size: 14px; font-weight: 700; }
+.bucket-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+.bucket-check { width: 22px; height: 22px; border-radius: 4px; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 13px; cursor: pointer; flex-shrink: 0; transition: all 0.2s; touch-action: manipulation; }
+.bucket-check.done { background: var(--primary); border-color: var(--primary); color: #fff; }
+.bucket-text { flex: 1; font-size: 14px; font-weight: 500; color: var(--text); line-height: 1.5; }
+.bucket-text.done { text-decoration: line-through; color: var(--text-sub); }
+@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+.shake { animation: shake 0.35s ease; }
+
 /* 날짜 세부 — 파트너 섹션 */
 .partner-day-section { border-top: 2px dashed var(--border); margin: 4px 16px 16px; padding: 16px 0 0; }
 .partner-day-header { font-size: 13px; font-weight: 700; color: var(--text-sub); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
@@ -437,66 +529,57 @@ textarea { resize: none; }
     <p>잠시만요...</p>
   </div>
 
-  <!-- ═══ 인증 (로그인 + 회원가입) ═══ -->
-  <div id="screen-auth" class="screen no-nav">
+  <!-- ═══ 로그인 / 회원가입 ═══ -->
+  <div id="screen-onboard" class="screen no-nav">
     <div class="auth-hero">
-      <img class="auth-hero-img" src="hero.jpeg" alt="RE:CONNECT 히어로 이미지">
       <div class="auth-hero-overlay"></div>
       <div class="auth-hero-text">
         <h1>RE:CONNECT</h1>
         <p>서로를 더 깊이 이해하는 시간</p>
       </div>
     </div>
-    <div id="setup-notice" class="setup-notice">
-      ⚠️ <strong>연결 오류</strong><br>
-      인터넷 연결을 확인하거나 새로고침해 주세요.<br>
-      <span style="font-size:11px;color:#999">Supabase SDK 로드 실패</span>
-    </div>
     <div class="auth-card">
       <div class="auth-tabs">
         <button class="auth-tab active" data-tab="login" onclick="switchAuthTab('login')">로그인</button>
         <button class="auth-tab" data-tab="register" onclick="switchAuthTab('register')">회원가입</button>
       </div>
-
-      <!-- 로그인 -->
+      <!-- 로그인 폼 -->
       <div id="auth-login" class="auth-form">
         <div class="input-group">
           <label for="login-email">이메일</label>
-          <input type="email" id="login-email" placeholder="example@email.com" autocomplete="email">
+          <input type="email" id="login-email" placeholder="이메일을 입력하세요" autocomplete="email">
         </div>
         <div class="input-group">
           <label for="login-pw">비밀번호</label>
-          <input type="password" id="login-pw" placeholder="비밀번호 입력" autocomplete="current-password">
+          <input type="password" id="login-pw" placeholder="비밀번호를 입력하세요" autocomplete="current-password">
         </div>
         <div class="auth-global-error" id="login-error"></div>
         <button class="btn btn-primary" id="login-btn" onclick="submitLogin()">로그인</button>
       </div>
-
-      <!-- 회원가입 -->
+      <!-- 회원가입 폼 -->
       <div id="auth-register" class="auth-form hidden">
         <div class="input-group">
           <label for="reg-name">이름</label>
-          <input type="text" id="reg-name" placeholder="이름을 입력해주세요" autocomplete="name">
-          <div class="error-msg" id="err-name">이름은 2자 이상 입력해주세요</div>
+          <input type="text" id="reg-name" placeholder="이름을 입력하세요" maxlength="20" autocomplete="off">
+          <div class="error-msg" id="err-name">이름을 입력해주세요 (2자 이상)</div>
         </div>
         <div class="input-group">
           <label for="reg-birth">생년월일</label>
           <input type="date" id="reg-birth" autocomplete="bday">
-          <div class="error-msg" id="err-birth">만 14세 이상만 사용 가능합니다</div>
+          <div class="error-msg" id="err-birth">생년월일을 입력해주세요</div>
         </div>
         <div class="input-group">
           <label for="reg-email">이메일</label>
-          <input type="email" id="reg-email" placeholder="example@email.com" autocomplete="email">
-          <div class="error-msg" id="err-email">올바른 이메일 형식을 입력해주세요</div>
+          <input type="email" id="reg-email" placeholder="이메일을 입력하세요" autocomplete="email">
+          <div class="error-msg" id="err-email">올바른 이메일을 입력해주세요</div>
         </div>
         <div class="input-group">
           <label for="reg-pw">비밀번호</label>
-          <input type="password" id="reg-pw" placeholder="8자 이상 입력해주세요" autocomplete="new-password">
-          <div class="error-msg" id="err-pw">비밀번호는 8자 이상이어야 합니다</div>
+          <input type="password" id="reg-pw" placeholder="8자 이상 입력하세요" autocomplete="new-password">
+          <div class="error-msg" id="err-pw">비밀번호는 8자 이상이어야 해요</div>
         </div>
         <div class="auth-global-error" id="register-error"></div>
         <button class="btn btn-primary" id="register-btn" onclick="submitRegister()">회원가입</button>
-        <p class="auth-info">가입 후 바로 로그인됩니다<br>(이메일 인증 설정에 따라 다를 수 있어요)</p>
       </div>
     </div>
   </div>
@@ -680,6 +763,29 @@ textarea { resize: none; }
     </div>
   </div>
 
+  <!-- ═══ 우리 집 ═══ -->
+  <div id="screen-house" class="screen">
+    <div class="house-header">
+      <h2>우리 집 만들기 🏡</h2>
+      <p>함께한 시간만큼 집이 채워져요</p>
+    </div>
+    <div id="house-visual-area"></div>
+    <div id="house-rooms-area"></div>
+    <div class="horsemen-battle-section">
+      <div class="battle-section-title">⚔️ 갈등 기사 퇴치하기</div>
+      <div id="house-horsemen-battle"></div>
+    </div>
+    <div class="bucket-section">
+      <div class="bond-section-title" style="margin-bottom:10px">🌳 우리의 버킷리스트</div>
+      <p class="bond-section-desc">함께 이루고 싶은 꿈을 적어보세요 (추가할 때마다 정원이 자라요)</p>
+      <div class="bucket-input-row">
+        <input type="text" class="bucket-input" id="bucket-input" placeholder="예: 제주도 여행하기" maxlength="50">
+        <button class="bucket-add-btn" onclick="addBucketItem()">추가</button>
+      </div>
+      <div id="bucket-list"></div>
+    </div>
+  </div>
+
   <!-- ═══ 프로필 ═══ -->
   <div id="screen-profile" class="screen">
     <div class="profile-hero">
@@ -692,18 +798,20 @@ textarea { resize: none; }
       <div class="stat-card"><div class="stat-num" id="stat-repair">0</div><div class="stat-label">리페어 횟수</div></div>
     </div>
     <div class="profile-info-card">
-      <div class="profile-info-row"><span class="label">이메일</span><span class="value" id="profile-email"></span></div>
-      <div class="profile-info-row"><span class="label">생년월일</span><span class="value" id="profile-birth"></span></div>
+      <div class="profile-info-row"><span class="label">시작일</span><span class="value" id="profile-join"></span></div>
     </div>
-    <div class="partner-connect-card" id="partner-connect-card">
+    <!-- 파트너 연결 -->
+    <div class="partner-connect-card">
       <h3>💑 파트너 연결</h3>
-      <div id="partner-section-content"><!-- JS로 렌더링 --></div>
+      <div id="partner-section-content"><div class="partner-no-data">불러오는 중...</div></div>
     </div>
-    <button class="logout-btn" onclick="logout()">로그아웃</button>
+    <button class="logout-btn" onclick="logoutUser()">🚪 로그아웃</button>
+    <button class="logout-btn" onclick="resetApp()" style="background:#FFF0F0;color:#FF4444;border:2px solid #FFCDD2;margin-top:8px">🗑️ 데이터 초기화</button>
   </div>
 
   <nav id="bottom-nav" class="hidden">
     <button class="nav-item active" data-nav="daily" onclick="navTo('daily')"><span class="nav-icon">🏠</span>홈</button>
+    <button class="nav-item" data-nav="house" onclick="navTo('house')"><span class="nav-icon">🏡</span>우리 집</button>
     <button class="nav-item" data-nav="bond" onclick="navTo('bond')"><span class="nav-icon">🌡️</span>우리 온도</button>
     <button class="nav-item" data-nav="profile" onclick="navTo('profile')"><span class="nav-icon">👤</span>프로필</button>
   </nav>
@@ -711,25 +819,14 @@ textarea { resize: none; }
 </div>
 
 <script>
-/* ══════════════════════════════════════
-   Supabase 설정 — 아래 두 값을 교체하세요
-══════════════════════════════════════ */
-const SUPABASE_URL      = 'https://ejnadmvcjoufqdnkffzs.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVqbmFkbXZjam91ZnFkbmtmZnpzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTYwOTcsImV4cCI6MjA5Mzc5MjA5N30.QOG3C0OlR80BzjEXBeL-BkfrM8y0bhjGZnm6ghUgCtI';
-
-let SB_READY = SUPABASE_URL !== 'YOUR_SUPABASE_URL';
-let sb = null, currentUid = null;
-
-if (SB_READY) {
-  try {
-    if (!window.supabase) throw new Error('Supabase SDK not loaded');
-    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-  } catch(e) {
-    console.warn('Supabase 초기화 실패:', e.message);
-    SB_READY = false;
-    sb = null;
-  }
-}
+/* Supabase 초기화 */
+const SUPABASE_URL  = 'https://ejnadmvcjoufqdnkffzs.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_c93PAiw2VUTKkYq43VXy_A_SZ542G8e';
+let sb = null, SB_READY = false, currentUid = null;
+try {
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  SB_READY = true;
+} catch(e) { console.warn('Supabase 초기화 실패:', e.message); }
 
 /* ══════════════════════════════════════
    1. 상수 & 데이터
@@ -818,6 +915,25 @@ const LOVEMAP_QUESTIONS = [
   '파트너가 우리 관계에서 더 많이 원하는 것은?',
   '파트너가 지금 가장 필요로 하는 것은 무엇일까요?'
 ];
+const ROOM_THRESHOLDS = { living:5, kitchen:7, bedroom:5, entrance:3, garden:5 };
+const ROOMS = [
+  { id:'living',   name:'거실', emoji:'🛋️', desc:'서로를 알아가는 공간',    source:'러브맵 작성' },
+  { id:'kitchen',  name:'주방', emoji:'🍽️', desc:'따뜻한 마음을 나누는 공간', source:'연결하기 작성' },
+  { id:'bedroom',  name:'침실', emoji:'🛏️', desc:'마음을 연결하는 공간',    source:'오늘 함께하기 체크' },
+  { id:'entrance', name:'현관', emoji:'🚪', desc:'갈등을 해결하는 공간',    source:'리페어 모드 완료' },
+  { id:'garden',   name:'정원', emoji:'🌳', desc:'함께 꿈꾸는 공간',       source:'버킷리스트 추가' }
+];
+const BEDROOM_MISSIONS = [
+  '오늘 5분 이상 대화하기', '함께 식사하기', '산책하기',
+  '함께 영화/드라마 보기', '데이트하기'
+];
+const HORSEMAN_ANTIDOTES = {
+  '비판':  ['기다리는 시간이 길어져서 서운했어.', '나는 ~할 때 힘들어.', '네 말을 들으니 ~했어.'],
+  '경멸':  ['그래도 네가 노력한 건 알고 있어.', '나는 너를 소중하게 생각해.', '고마워, 정말로.'],
+  '방어':  ['내가 그 부분은 놓쳤던 것 같아.', '맞아, 내 실수였어.', '네 말도 이해해.'],
+  '담쌓기': ['지금은 감정이 커서 힘들어. 조금 뒤에 이야기하자.', '잠깐 쉬고 다시 얘기해도 될까?', '나 지금 정리가 필요해.']
+};
+
 const NEED_ADDITIONS = {
   '이해받고\n싶다':       '제 입장에서 한번 생각해봐 주세요.',
   '중요하게\n여겨지고 싶다': '저도 소중한 사람으로 봐주면 좋겠어요.',
@@ -837,6 +953,13 @@ const cache = {
   setRepairHistory: h     => localStorage.setItem('rc_repair', JSON.stringify(h)),
   getBond:          d     => JSON.parse(localStorage.getItem('rc_bond_'+d)||'{"warm":0,"friction":0,"horsemen":[],"lovemap":""}'),
   setBond:          (d,v) => localStorage.setItem('rc_bond_'+d, JSON.stringify(v)),
+  getHouse: () => JSON.parse(localStorage.getItem('rc_house') || JSON.stringify({
+    rooms: { living:0, kitchen:0, bedroom:0, entrance:0, garden:0 },
+    horsemen: { '비판':{hp:100,defeated:0}, '경멸':{hp:100,defeated:0}, '방어':{hp:100,defeated:0}, '담쌓기':{hp:100,defeated:0} },
+    bucketList: [],
+    bedroomChecks: {}
+  })),
+  setHouse: v => localStorage.setItem('rc_house', JSON.stringify(v)),
   clear: () => Object.keys(localStorage).filter(k=>k.startsWith('rc_')).forEach(k=>localStorage.removeItem(k))
 };
 
@@ -883,39 +1006,35 @@ function syncRepairRecord(record) {
     .then(({error}) => { if(error) console.warn('sync repair:', error.message); });
 }
 
+function syncBond(date, bond) {
+  if (!SB_READY || !currentUid) return;
+  sb.from('bond_data').upsert({ uid:currentUid, date, warm:bond.warm||0, friction:bond.friction||0, horsemen:bond.horsemen||[], lovemap:bond.lovemap||'' }, {onConflict:'uid,date'})
+    .then(({error}) => { if(error) console.warn('sync bond:', error.message); });
+}
+
+function syncHouse() {
+  if (!SB_READY || !currentUid) return;
+  const h = cache.getHouse();
+  sb.from('house_data').upsert({ uid:currentUid, rooms:h.rooms||{}, horsemen_battle:h.horsemen||{}, bucket_list:h.bucketList||[], bedroom_checks:h.bedroomChecks||{} }, {onConflict:'uid'})
+    .then(({error}) => { if(error) console.warn('sync house:', error.message); });
+}
+
 async function loadAllFromSupabase(uid) {
   if (!SB_READY) return;
-  const withTimeout = (promise, ms) => Promise.race([
-    promise,
-    new Promise(resolve => setTimeout(resolve, ms)) // 타임아웃 시 그냥 resolve
-  ]);
+  // localStorage에 이미 데이터가 있으면 그대로 사용 (같은 기기 재로그인)
+  // Supabase DB 동기화는 선택적 — 실패해도 localStorage 데이터 유지
   try {
-    // 유저 프로필
-    const { data:u } = await withTimeout(
-      sb.from('users').select('*').eq('id', uid).single(), 6000
-    );
-    if (u) {
+    const { data:u, error } = await Promise.race([
+      sb.from('users').select('*').eq('id', uid).single(),
+      new Promise(r => setTimeout(() => r({ data:null, error:'timeout' }), 5000))
+    ]);
+    if (u && !error) {
       const usr = userFromRow(u);
-      if (usr.partnerId) {
-        const { data:p } = await withTimeout(
-          sb.from('users').select('name').eq('id', usr.partnerId).single(), 4000
-        );
-        if (p) usr.partnerName = p.name;
-      }
-      cache.setUser(usr);
+      // localStorage에 없을 때만 덮어씀 (재로그인 시 로컬 데이터 보존)
+      const local = cache.getUser();
+      if (!local || !local.name) cache.setUser(usr);
     }
-    // 리페어 히스토리
-    const { data:repairs } = await withTimeout(
-      sb.from('repair_history').select('*').eq('uid', uid).order('created_at'), 6000
-    );
-    if (repairs) cache.setRepairHistory(repairs.map(r => ({ date:r.date, situation:r.situation, situationType:r.situation_type, emotion:r.emotion, need:r.need, message:r.message })));
-    // 최근 2달 일별 데이터
-    const from = formatDate(new Date(new Date().getFullYear(), new Date().getMonth()-1, 1));
-    const { data:daily } = await withTimeout(
-      sb.from('daily_data').select('*').eq('uid', uid).gte('date', from), 6000
-    );
-    if (daily) daily.forEach(row => cache.setDailyData(row.date, dailyFromRow(row)));
-  } catch(e) { console.warn('Supabase load error (using cache):', e.message); }
+  } catch(e) { console.warn('Supabase load (using local cache):', e.message); }
 }
 
 async function loadMonthFromSupabase(uid, year, month) {
@@ -1007,24 +1126,17 @@ function clearRegErrors() {
 function showFieldErr(fid, eid) { document.getElementById(fid).classList.add('error'); document.getElementById(eid).classList.add('show'); }
 
 async function submitRegister() {
-  if (!SB_READY) { showToast('Supabase 설정이 필요합니다'); return; }
+  if (!SB_READY) { showToast('연결 오류. 잠시 후 다시 시도해주세요'); return; }
   clearRegErrors();
   const name  = document.getElementById('reg-name').value.trim();
   const birth = document.getElementById('reg-birth').value;
   const email = document.getElementById('reg-email').value.trim();
   const pw    = document.getElementById('reg-pw').value;
   let valid = true;
-  if (name.length<2)       { showFieldErr('reg-name','err-name');   valid=false; }
-  if (!birth) {
-    showFieldErr('reg-birth','err-birth'); valid=false;
-  } else {
-    const bd=new Date(birth), td=new Date();
-    let age=td.getFullYear()-bd.getFullYear();
-    if (td.getMonth()<bd.getMonth()||(td.getMonth()===bd.getMonth()&&td.getDate()<bd.getDate())) age--;
-    if (age<14) { showFieldErr('reg-birth','err-birth'); valid=false; }
-  }
+  if (name.length < 2)      { showFieldErr('reg-name','err-name');   valid=false; }
+  if (!birth)               { showFieldErr('reg-birth','err-birth'); valid=false; }
   if (!validateEmail(email)) { showFieldErr('reg-email','err-email'); valid=false; }
-  if (pw.length<8)           { showFieldErr('reg-pw','err-pw');       valid=false; }
+  if (pw.length < 8)         { showFieldErr('reg-pw','err-pw');       valid=false; }
   if (!valid) return;
 
   const btn = document.getElementById('register-btn');
@@ -1033,25 +1145,23 @@ async function submitRegister() {
     const { data, error } = await sb.auth.signUp({ email, password: pw });
     if (error) throw error;
 
-    // Supabase v2: 이미 가입된 이메일이면 identities 배열이 빈 상태로 반환됨 (오류 없이)
     if (data.user && (!data.user.identities || data.user.identities.length === 0)) {
       throw new Error('User already registered');
     }
 
-    // 이메일 인증 필요한 경우 (session이 null)
     if (!data.session) {
       btn.disabled=false; btn.textContent='회원가입';
-      document.getElementById('register-error').textContent = '📧 가입 확인 이메일을 보냈어요. 메일함을 확인해주세요!';
+      document.getElementById('register-error').textContent = '📧 확인 이메일을 보냈어요. 메일함을 확인해주세요!';
       document.getElementById('register-error').style.color = '#FF8E53';
       document.getElementById('register-error').classList.add('show');
       return;
     }
 
-    const uid = data.user.id;
-    const partnerCode = generatePartnerCode();
-    const userData = { name, birthdate:birth, email, joinDate:todayStr(), surveyAnswers:null, profileSummary:null, partnerCode, partnerId:null };
-    cache.setUser(userData); // DB insert 전에 캐시 먼저 저장 (타이밍 이슈 방지)
-    await sb.from('users').insert({ id:uid, name, birthdate:birth, email, join_date:todayStr(), partner_code:partnerCode });
+    // 데이터 localStorage에 저장 (기기에 보존)
+    const userData = { name, birthdate:birth, email, joinDate:todayStr(), surveyAnswers:null, profileSummary:null };
+    cache.setUser(userData);
+    // Supabase DB에도 저장 시도 (선택적 — 없어도 앱 동작)
+    sb.from('users').upsert({ id:data.user.id, name, birthdate:birth, email, join_date:todayStr() }).then(({error:e}) => { if(e) console.warn('users upsert:', e.message); });
     // onAuthStateChange 에서 설문으로 이동
   } catch(e) {
     const msg = (e && e.message) ? e.message : '';
@@ -1071,94 +1181,53 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   const nav = document.getElementById('bottom-nav');
-  if (['screen-auth','screen-survey'].includes(id)) { nav.classList.add('hidden'); return; }
+  if (['screen-onboard','screen-survey'].includes(id)) { nav.classList.add('hidden'); return; }
   nav.classList.remove('hidden');
-  const map = { 'screen-daily':'daily','screen-daily-detail':'daily','screen-repair':'daily','screen-bond':'bond','screen-profile':'profile' };
+  const map = { 'screen-daily':'daily','screen-daily-detail':'daily','screen-repair':'daily','screen-house':'house','screen-bond':'bond','screen-profile':'profile' };
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   const key = map[id]; if (key) document.querySelector(`.nav-item[data-nav="${key}"]`)?.classList.add('active');
 }
 
 function goBack() { if (previousScreen) { showScreen(previousScreen); previousScreen=null; } else showScreen('screen-daily'); }
-function navTo(t) { if(t==='daily'){renderCalendar();updateTodayCard();showScreen('screen-daily');} else if(t==='bond') goBond(); else if(t==='profile') goProfile(); }
-function goProfile() { renderProfile(); renderPartnerSection(); showScreen('screen-profile'); }
+function navTo(t) { if(t==='daily'){renderCalendar();updateTodayCard();showScreen('screen-daily');} else if(t==='house') goHouse(); else if(t==='bond') goBond(); else if(t==='profile') goProfile(); }
+function goProfile() { renderProfile(); showScreen('screen-profile'); }
 function goRepair() {
   Object.assign(repairState, {step:1,situation:'',situationType:'',emotion:'',need:'',breathRunning:false});
   renderRepairStep(1); showScreen('screen-repair');
 }
 
-function enterApp() {
+/* ══════════════════════════════════════
+   9. 앱 시작 & 초기화
+══════════════════════════════════════ */
+function resetApp() {
+  if (!confirm('모든 기록이 삭제됩니다. 계속하시겠습니까?')) return;
+  cache.clear();
+  showScreen('screen-onboard');
+}
+
+async function logoutUser() {
+  if (!confirm('로그아웃 하시겠습니까?')) return;
+  currentUid = null;
+  if (SB_READY) await sb.auth.signOut();
+  // localStorage 데이터는 유지 — 재로그인 시 그대로 복원됨
+  showScreen('screen-onboard');
+  switchAuthTab('login');
+}
+
+function enterApp(uid) {
+  currentUid = uid;
   const user = cache.getUser();
-  // 인증은 됐지만 캐시가 없으면 (race condition 등) → 설문으로
-  if (!user) {
-    if (currentUid) { initSurvey(); showScreen('screen-survey'); return; }
-    showScreen('screen-auth'); return;
-  }
+  if (!user || !user.name) { showScreen('screen-onboard'); return; }
   if (!user.surveyAnswers) { initSurvey(); showScreen('screen-survey'); return; }
   document.getElementById('daily-user-name').textContent = user.name || '';
   renderCalendar(); updateTodayCard(); showScreen('screen-daily');
 }
 
-/* ══════════════════════════════════════
-   9. Auth 상태 감지 (Supabase)
-══════════════════════════════════════ */
-async function logout() {
-  if (!confirm('로그아웃 하시겠습니까?')) return;
-  showLoading(true);
-  cache.clear();
-  if (SB_READY) await sb.auth.signOut();
-  currentUid=null;
-  showLoading(false);
-  showScreen('screen-auth');
-  ['login-email','login-pw'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
-  document.getElementById('login-btn').disabled=false; document.getElementById('login-btn').textContent='로그인';
-  document.getElementById('register-btn').disabled=false; document.getElementById('register-btn').textContent='회원가입';
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-  if (!SB_READY) {
-    document.getElementById('setup-notice').style.display='block';
-    showScreen('screen-auth');
-    return;
-  }
-
-  // 안전장치: 3초 안에 화면이 안 뜨면 로그인 화면 강제 표시
-  const fallbackTimer = setTimeout(() => {
-    if (!document.querySelector('.screen.active')) {
-      showScreen('screen-auth');
-    }
-  }, 3000);
-
-  sb.auth.onAuthStateChange(async (event, session) => {
-    clearTimeout(fallbackTimer);
-    if (session) {
-      currentUid = session.user.id;
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        showLoading(true);
-        try {
-          await loadAllFromSupabase(currentUid);
-        } catch(e) {
-          console.warn('로그인 데이터 로드 오류:', e);
-        } finally {
-          showLoading(false);
-        }
-        try {
-          enterApp();
-        } catch(e) {
-          console.error('앱 초기화 오류:', e);
-          showToast('앱 로드 중 오류가 발생했습니다. 새로고침해주세요.');
-          showScreen('screen-auth');
-        }
-      }
-    } else {
-      currentUid=null; cache.clear(); showScreen('screen-auth');
-    }
-  });
-
-  // iOS 키보드 대응 — 포커스 시 네비 숨김, blur 시 복원
+document.addEventListener('DOMContentLoaded', () => {
+  // iOS 키보드 대응
   document.addEventListener('focusin', e => {
     if (e.target.matches('input, textarea')) {
       document.getElementById('bottom-nav').classList.add('hidden');
-      // 입력 필드가 키보드에 가려지지 않도록 스크롤
       setTimeout(() => e.target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300);
     }
   });
@@ -1166,11 +1235,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (e.target.matches('input, textarea')) {
       setTimeout(() => {
         const activeId = document.querySelector('.screen.active')?.id;
-        const isAuthScreen = activeId === 'screen-auth' || activeId === 'screen-survey';
-        if (!document.activeElement.matches('input, textarea') && currentUid && !isAuthScreen) {
+        const isOnboard = activeId === 'screen-onboard' || activeId === 'screen-survey';
+        if (!document.activeElement.matches('input, textarea') && !isOnboard) {
           document.getElementById('bottom-nav').classList.remove('hidden');
         }
       }, 100);
+    }
+  });
+
+  if (!SB_READY) {
+    // Supabase 없으면 localStorage로 폴백
+    const user = cache.getUser();
+    if (!user || !user.name) { showScreen('screen-onboard'); return; }
+    enterApp(null); return;
+  }
+
+  showScreen('screen-onboard'); // 인증 확인 중 임시 표시
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (session?.user) {
+      currentUid = session.user.id;
+      showLoading(true);
+      await loadAllFromSupabase(currentUid);
+      showLoading(false);
+      enterApp(currentUid);
+    } else {
+      currentUid = null;
+      showScreen('screen-onboard');
     }
   });
 });
@@ -1374,8 +1464,12 @@ function renderConnectTab() {
   });
 }
 function saveConnect() {
-  const data=cache.getDailyData(selectedDate);
+  const prevData = cache.getDailyData(selectedDate);
+  const hadConnect = prevData.connect && (prevData.connect.q1 || prevData.connect.q2 || prevData.connect.q3 || prevData.connect.qr);
+  const data = prevData;
   data.connect={q1:document.getElementById('cq-q1').value.trim(),q2:document.getElementById('cq-q2').value.trim(),q3:document.getElementById('cq-q3').value.trim(),qr:document.getElementById('cq-qr').value.trim()};
+  const hasConnect = data.connect.q1 || data.connect.q2 || data.connect.q3 || data.connect.qr;
+  if (!hadConnect && hasConnect) addRoomPoint('kitchen');
   cache.setDailyData(selectedDate,data); syncDaily(selectedDate,data);
   renderCalendar(); showToast('연결하기가 저장되었습니다 ✓');
 }
@@ -1448,6 +1542,8 @@ function renderStep4() {
   cache.setRepairHistory(history); syncRepairRecord(record);
   // 오늘 온도에 마찰 +1 반영
   const bond=cache.getBond(todayStr()); bond.friction=(bond.friction||0)+1; cache.setBond(todayStr(),bond);
+  // 현관 포인트 +1
+  addRoomPoint('entrance');
 }
 function generateMessage() {
   const sit=repairState.situation||'어떤 일', emo=repairState.emotion||'복잡한 감정', need=repairState.need||'이해';
@@ -1529,21 +1625,24 @@ function generatePartnerCode() {
   return Array.from({length:6}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('');
 }
 
-async function ensurePartnerCode() {
+function ensurePartnerCode() {
   const user = cache.getUser();
   if (user?.partnerCode) return user.partnerCode;
-  if (!SB_READY || !currentUid) return null;
+  // 로컬에서 먼저 생성 → localStorage 저장
   const code = generatePartnerCode();
-  await sb.from('users').update({ partner_code:code }).eq('id', currentUid);
   user.partnerCode = code; cache.setUser(user);
+  // DB에도 저장 시도 (실패해도 무관)
+  if (SB_READY && currentUid) {
+    sb.from('users').update({ partner_code:code }).eq('id', currentUid)
+      .then(({error:e}) => { if(e) console.warn('partner_code sync:', e.message); });
+  }
   return code;
 }
 
 async function renderPartnerSection() {
   const el = document.getElementById('partner-section-content');
-  if (!SB_READY) { el.innerHTML='<p style="font-size:13px;color:var(--text-sub)">Supabase 연결 후 이용 가능합니다</p>'; return; }
-  el.innerHTML='<div class="partner-no-data">불러오는 중...</div>';
-  const code = await ensurePartnerCode();
+  if (!el) return;
+  const code = ensurePartnerCode();
   const user = cache.getUser();
   let html = '';
   if (code) {
@@ -1666,6 +1765,7 @@ function addWarm() {
   const bond = cache.getBond(today);
   bond.warm = (bond.warm || 0) + 1;
   cache.setBond(today, bond);
+  syncBond(today, bond);
   document.getElementById('bond-warm-count').textContent = bond.warm;
   updateBondGauge(bond);
   showToast('따뜻한 순간 +1 💛');
@@ -1687,8 +1787,20 @@ function toggleHorseman(name) {
   const today = todayStr();
   const bond = cache.getBond(today);
   const idx = bond.horsemen.indexOf(name);
-  if (idx >= 0) bond.horsemen.splice(idx, 1); else bond.horsemen.push(name);
+  const isAdding = idx < 0;
+  if (isAdding) {
+    bond.horsemen.push(name);
+    // 집 기사 HP가 0 이하면 새 배틀 시작 (HP 리셋)
+    const house = cache.getHouse();
+    if (!house.horsemen[name]) house.horsemen[name] = { hp:100, defeated:0 };
+    if (house.horsemen[name].hp <= 0) house.horsemen[name].hp = 100;
+    cache.setHouse(house);
+    syncHouse();
+  } else {
+    bond.horsemen.splice(idx, 1);
+  }
   cache.setBond(today, bond);
+  syncBond(today, bond);
   renderHorsemenGrid(bond.horsemen);
   // 해독제 표시
   const antidoteEl = document.getElementById('horseman-antidote');
@@ -1706,25 +1818,275 @@ function toggleHorseman(name) {
 function saveLovemap() {
   const today = todayStr();
   const bond = cache.getBond(today);
-  bond.lovemap = document.getElementById('bond-lovemap-input').value.trim();
+  const newVal = document.getElementById('bond-lovemap-input').value.trim();
+  if (newVal && !bond.lovemap) addRoomPoint('living');
+  bond.lovemap = newVal;
   cache.setBond(today, bond);
+  syncBond(today, bond);
   showToast('러브맵 저장 완료 🗺️');
 }
 
 /* ══════════════════════════════════════
-   16. 프로필
+   16. 우리 집
+══════════════════════════════════════ */
+function goHouse() { renderHouseScreen(); showScreen('screen-house'); }
+
+function addRoomPoint(roomId) {
+  const house = cache.getHouse();
+  if (!house.rooms) house.rooms = { living:0, kitchen:0, bedroom:0, entrance:0, garden:0 };
+  const prev = house.rooms[roomId] || 0;
+  const threshold = ROOM_THRESHOLDS[roomId];
+  house.rooms[roomId] = prev + 1;
+  cache.setHouse(house);
+  const room = ROOMS.find(r => r.id === roomId);
+  if (prev < threshold && house.rooms[roomId] >= threshold) {
+    showToast(`${room.emoji} ${room.name} 완성! 🎉`);
+  }
+}
+
+function getHouseStage() {
+  const house = cache.getHouse();
+  return ROOMS.filter(r => (house.rooms[r.id] || 0) >= ROOM_THRESHOLDS[r.id]).length;
+}
+
+function getHouseEmoji() {
+  const stage = getHouseStage();
+  if (stage === 0) return '🏚️';
+  if (stage <= 2) return '🏠';
+  if (stage <= 4) return '🏘️';
+  return '🏡';
+}
+
+function renderHouseScreen() {
+  renderHouseVisual();
+  renderRoomCards();
+  renderHorsemenBattle();
+  renderBucketList();
+}
+
+function renderHouseVisual() {
+  const house = cache.getHouse();
+  const stage = getHouseStage();
+  const total = ROOMS.length;
+  const pct = Math.round(stage / total * 100);
+  const badges = ROOMS.map(r => {
+    const done = (house.rooms[r.id] || 0) >= ROOM_THRESHOLDS[r.id];
+    return `<span class="room-badge${done ? ' done' : ''}" title="${r.name}">${r.emoji}</span>`;
+  }).join('');
+  document.getElementById('house-visual-area').innerHTML = `
+    <div class="house-visual-card">
+      <span class="house-emoji">${getHouseEmoji()}</span>
+      <div class="house-room-badges">${badges}</div>
+      <div class="house-progress-bar"><div class="house-progress-fill" style="width:${pct}%"></div></div>
+      <div class="house-progress-label">${stage} / ${total} 방 완성${stage === total ? ' 🎊' : ''}</div>
+    </div>`;
+}
+
+function renderRoomCards() {
+  const house = cache.getHouse();
+  const today = todayStr();
+  const bedroomChecks = house.bedroomChecks || {};
+  const todayChecks = bedroomChecks[today] || [];
+  let html = '';
+  ROOMS.forEach(room => {
+    const pts = house.rooms[room.id] || 0;
+    const threshold = ROOM_THRESHOLDS[room.id];
+    const done = pts >= threshold;
+    const cappedPts = Math.min(pts, threshold);
+    const pct = Math.round(cappedPts / threshold * 100);
+    const remaining = Math.max(threshold - pts, 0);
+    html += `<div class="room-card">
+      <div class="room-card-header">
+        <span class="room-card-emoji">${room.emoji}</span>
+        <div class="room-card-info">
+          <div class="room-card-title">${room.name}</div>
+          <div class="room-card-source">${room.source}</div>
+        </div>
+        ${done ? '<span class="room-card-done-badge">✓ 완성</span>' : ''}
+      </div>
+      <div class="room-card-bar"><div class="room-card-fill" style="width:${pct}%"></div></div>
+      <div class="room-card-meta">${cappedPts} / ${threshold}${!done ? ` — ${remaining}번 더 하면 완성!` : ' 🎉'}</div>
+      ${room.id === 'bedroom' ? renderBedroomChecklist(todayChecks) : ''}
+    </div>`;
+  });
+  document.getElementById('house-rooms-area').innerHTML = html;
+}
+
+function renderBedroomChecklist(todayChecks) {
+  const items = BEDROOM_MISSIONS.map((m, i) => {
+    const checked = todayChecks.includes(m);
+    return `<div class="bedroom-mission" onclick="checkBedroomMission('${m.replace(/'/g,"\\'")}')">
+      <div class="bedroom-check${checked ? ' checked'  : ''}">${checked ? '✓' : ''}</div>
+      <span>${m}</span>
+    </div>`;
+  }).join('');
+  return `<div class="bedroom-checklist">${items}</div>`;
+}
+
+function checkBedroomMission(mission) {
+  const house = cache.getHouse();
+  const today = todayStr();
+  if (!house.bedroomChecks) house.bedroomChecks = {};
+  if (!house.bedroomChecks[today]) house.bedroomChecks[today] = [];
+  const checks = house.bedroomChecks[today];
+  const idx = checks.indexOf(mission);
+  if (idx >= 0) {
+    checks.splice(idx, 1);
+  } else {
+    checks.push(mission);
+    addRoomPoint('bedroom');
+    showToast('침실 포인트 +1 🛏️');
+  }
+  house.bedroomChecks[today] = checks;
+  cache.setHouse(house);
+  syncHouse();
+  renderRoomCards();
+}
+
+function renderHorsemenBattle() {
+  const today = todayStr();
+  const bond = cache.getBond(today);
+  const activeHorsemen = bond.horsemen || [];
+  const house = cache.getHouse();
+  const battleEl = document.getElementById('house-horsemen-battle');
+  if (activeHorsemen.length === 0) {
+    battleEl.innerHTML = `<div class="battle-no-enemy"><p>😌 오늘은 조용한 날이에요<br><span style="font-size:12px;color:var(--text-sub)">우리 온도에서 기사를 체크하면 배틀이 시작돼요</span></p></div>`;
+    return;
+  }
+  let html = '';
+  activeHorsemen.forEach(name => {
+    const h = HORSEMEN.find(x => x.name === name);
+    if (!h) return;
+    const houseH = (house.horsemen && house.horsemen[name]) || { hp:100, defeated:0 };
+    const hp = Math.max(0, houseH.hp);
+    const defeated = houseH.defeated || 0;
+    const antidotes = HORSEMAN_ANTIDOTES[name] || [];
+    const antidoteItems = antidotes.map(a =>
+      `<button class="antidote-option" onclick="useAntidote('${name}','${a.replace(/'/g,"\\'")}')">💊 "${a}"</button>`
+    ).join('');
+    html += `<div class="battle-card" id="battle-card-${name}">
+      <div class="battle-card-header">
+        <span class="battle-emoji">${h.emoji}</span>
+        <div>
+          <div class="battle-title">⚔️ ${name} 기사 등장!</div>
+          ${defeated > 0 ? `<div style="font-size:11px;color:#4CAF50;font-weight:600">🏆 ${defeated}회 퇴치 경험</div>` : ''}
+        </div>
+      </div>
+      <div class="battle-hp-bar"><div class="battle-hp-fill" id="hp-fill-${name}" style="width:${hp}%"></div></div>
+      <div class="battle-hp-label" id="hp-label-${name}">HP: ${hp} / 100${hp > 0 ? ` — 해독제 ${Math.ceil(hp/25)}회 더 필요해요` : ' — 거의 퇴치됐어요!'}</div>
+      <div class="antidote-options">${antidoteItems}</div>
+      <div style="font-size:12px;color:var(--text-sub);margin-bottom:6px;font-weight:600">또는 직접 입력:</div>
+      <div class="antidote-direct">
+        <input type="text" class="antidote-direct-input" id="antidote-input-${name}" placeholder="직접 해독제 문장을 써보세요..." maxlength="60">
+        <button class="antidote-submit-btn" onclick="useAntidoteDirect('${name}')">사용</button>
+      </div>
+    </div>`;
+  });
+  battleEl.innerHTML = html;
+}
+
+function useAntidote(name, text) {
+  _applyAntidote(name, text);
+}
+
+function useAntidoteDirect(name) {
+  const input = document.getElementById(`antidote-input-${name}`);
+  const text = input?.value.trim();
+  if (!text) { showToast('해독제 문장을 입력해주세요'); return; }
+  _applyAntidote(name, text);
+  if (input) input.value = '';
+}
+
+function _applyAntidote(name, text) {
+  const house = cache.getHouse();
+  if (!house.horsemen[name]) house.horsemen[name] = { hp:100, defeated:0 };
+  house.horsemen[name].hp = Math.max(0, (house.horsemen[name].hp || 100) - 25);
+  const hp = house.horsemen[name].hp;
+  if (hp <= 0) {
+    house.horsemen[name].defeated = (house.horsemen[name].defeated || 0) + 1;
+    house.horsemen[name].hp = 0;
+    cache.setHouse(house);
+    // 배틀 카드 흔들기 후 퇴치 완료 처리
+    const card = document.getElementById(`battle-card-${name}`);
+    if (card) { card.classList.add('shake'); setTimeout(() => card.classList.remove('shake'), 400); }
+    setTimeout(() => {
+      // 오늘 bond에서 해당 기사 제거
+      const today = todayStr();
+      const bond = cache.getBond(today);
+      const idx = bond.horsemen.indexOf(name);
+      if (idx >= 0) { bond.horsemen.splice(idx, 1); cache.setBond(today, bond); }
+      const h = HORSEMEN.find(x => x.name === name);
+      showToast(`🏆 ${name} 기사 퇴치 성공!`);
+      renderHorsemenGrid(bond.horsemen);
+      renderHorsemenBattle();
+      renderHouseVisual();
+    }, 500);
+  } else {
+    cache.setHouse(house);
+    // HP 바 즉시 업데이트
+    const fill = document.getElementById(`hp-fill-${name}`);
+    const label = document.getElementById(`hp-label-${name}`);
+    if (fill) { fill.classList.add('shake'); fill.style.width = hp + '%'; setTimeout(() => fill.classList.remove('shake'), 400); }
+    if (label) label.textContent = `HP: ${hp} / 100${hp > 0 ? ` — 해독제 ${Math.ceil(hp/25)}회 더 필요해요` : ' — 거의 퇴치됐어요!'}`;
+    showToast(`💊 해독제 사용! HP ${hp}/100`);
+  }
+}
+
+function renderBucketList() {
+  const house = cache.getHouse();
+  const items = house.bucketList || [];
+  const listEl = document.getElementById('bucket-list');
+  if (!listEl) return;
+  if (items.length === 0) {
+    listEl.innerHTML = '<div style="font-size:13px;color:var(--text-sub);text-align:center;padding:12px 0">아직 버킷리스트가 없어요. 함께할 꿈을 추가해보세요 🌱</div>';
+    return;
+  }
+  listEl.innerHTML = items.map((item, i) =>
+    `<div class="bucket-item">
+      <div class="bucket-check${item.done ? ' done' : ''}" onclick="toggleBucketItem(${i})">${item.done ? '✓' : ''}</div>
+      <span class="bucket-text${item.done ? ' done' : ''}">${item.text}</span>
+    </div>`
+  ).join('');
+}
+
+function addBucketItem() {
+  const input = document.getElementById('bucket-input');
+  const text = input?.value.trim();
+  if (!text) { showToast('내용을 입력해주세요'); return; }
+  const house = cache.getHouse();
+  if (!house.bucketList) house.bucketList = [];
+  house.bucketList.push({ text, done: false });
+  cache.setHouse(house);
+  input.value = '';
+  addRoomPoint('garden');
+  syncHouse();
+  renderBucketList();
+  renderHouseVisual();
+  showToast('버킷리스트 추가! 정원 포인트 +1 🌳');
+}
+
+function toggleBucketItem(idx) {
+  const house = cache.getHouse();
+  if (!house.bucketList[idx]) return;
+  house.bucketList[idx].done = !house.bucketList[idx].done;
+  cache.setHouse(house);
+  renderBucketList();
+}
+
+/* ══════════════════════════════════════
+   17. 프로필
 ══════════════════════════════════════ */
 function renderProfile() {
   const user=cache.getUser(); if(!user)return;
   document.getElementById('profile-name').textContent=user.name;
-  document.getElementById('profile-join-date').textContent=`${user.joinDate} 가입`;
+  document.getElementById('profile-join-date').textContent=`${user.joinDate} 시작`;
   document.getElementById('profile-summary').textContent=user.profileSummary||'아직 설문을 완료하지 않았어요';
-  document.getElementById('profile-email').textContent=user.email;
-  document.getElementById('profile-birth').textContent=user.birthdate;
+  document.getElementById('profile-join').textContent=user.joinDate||'';
   document.getElementById('stat-repair').textContent=cache.getRepairHistory().length;
   let cnt=0;
   for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k?.startsWith('rc_daily_')){const d=JSON.parse(localStorage.getItem(k)||'{}');if(d.diary)cnt++;}}
   document.getElementById('stat-diary').textContent=cnt;
+  renderPartnerSection();
 }
 </script>
 </body>
