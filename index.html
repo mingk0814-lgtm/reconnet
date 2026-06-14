@@ -1633,7 +1633,8 @@ function ensurePartnerCode() {
   user.partnerCode = code; cache.setUser(user);
   // DB에도 저장 시도 (실패해도 무관)
   if (SB_READY && currentUid) {
-    sb.from('users').update({ partner_code:code }).eq('id', currentUid)
+    const u = cache.getUser();
+    sb.from('users').upsert({ id:currentUid, name:u?.name||'', partner_code:code })
       .then(({error:e}) => { if(e) console.warn('partner_code sync:', e.message); });
   }
   return code;
