@@ -1627,14 +1627,15 @@ function generatePartnerCode() {
 
 function ensurePartnerCode() {
   const user = cache.getUser();
-  if (user?.partnerCode) return user.partnerCode;
-  // 로컬에서 먼저 생성 → localStorage 저장
-  const code = generatePartnerCode();
-  user.partnerCode = code; cache.setUser(user);
-  // DB에도 저장 시도 (실패해도 무관)
+  let code = user?.partnerCode;
+  if (!code) {
+    code = generatePartnerCode();
+    user.partnerCode = code;
+    cache.setUser(user);
+  }
+  // 항상 Supabase에 동기화 (기존 코드도 테이블에 없을 수 있음)
   if (SB_READY && currentUid) {
-    const u = cache.getUser();
-    sb.from('users').upsert({ id:currentUid, name:u?.name||'', partner_code:code })
+    sb.from('users').upsert({ id:currentUid, name:user?.name||'', partner_code:code })
       .then(({error:e}) => { if(e) console.warn('partner_code sync:', e.message); });
   }
   return code;
