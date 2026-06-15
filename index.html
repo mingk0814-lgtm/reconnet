@@ -791,7 +791,10 @@ textarea { resize: none; }
       <div class="bond-section-title">🗺️ 오늘의 러브맵</div>
       <p class="bond-section-desc">파트너의 내면 세계를 얼마나 알고 있나요?</p>
       <div class="bond-lovemap-q" id="bond-lovemap-q"></div>
-      <textarea class="bond-lovemap-textarea" id="bond-lovemap-input" placeholder="여기에 적어보세요..."></textarea>
+      <div style="font-size:12px;font-weight:700;color:var(--primary);margin-bottom:6px">💭 파트너는 어떻게 답할 것 같나요? (내 예상)</div>
+      <textarea class="bond-lovemap-textarea" id="bond-lovemap-guess" placeholder="파트너의 답을 예상해보세요..."></textarea>
+      <div style="font-size:12px;font-weight:700;color:var(--text-sub);margin:10px 0 6px">✏️ 나의 실제 답변</div>
+      <textarea class="bond-lovemap-textarea" id="bond-lovemap-input" placeholder="나는 이렇게 생각해요..."></textarea>
       <button class="section-save-btn" onclick="saveLovemap()" style="margin:8px 0 0">저장하기</button>
       <div id="lovemap-partner-result"></div>
     </div>
@@ -1788,10 +1791,13 @@ function renderBondScreen() {
   // 러브맵 질문
   const qIdx = getDateSeed(today) % LOVEMAP_QUESTIONS.length;
   document.getElementById('bond-lovemap-q').textContent = LOVEMAP_QUESTIONS[qIdx];
-  document.getElementById('bond-lovemap-input').value = bond.lovemap || '';
+  const user = cache.getUser();
+  const lc = user?.lovemapCache?.[today] || {};
+  document.getElementById('bond-lovemap-input').value = lc.myAnswer || bond.lovemap || '';
+  document.getElementById('bond-lovemap-guess').value = lc.partnerGuess || '';
   document.getElementById('horseman-antidote').style.display = 'none';
   document.getElementById('lovemap-partner-result').innerHTML = '';
-  if (bond.lovemap) loadPartnerLovemap();
+  if (lc.myAnswer || lc.partnerGuess) loadPartnerLovemap();
 }
 
 function updateBondGauge(bond) {
@@ -1879,16 +1885,17 @@ function toggleHorseman(name) {
 async function saveLovemap() {
   const today = todayStr();
   const bond = cache.getBond(today);
-  const newVal = document.getElementById('bond-lovemap-input').value.trim();
-  if (!newVal) { showToast('내용을 입력해주세요'); return; }
+  const myAnswer = document.getElementById('bond-lovemap-input').value.trim();
+  const partnerGuess = document.getElementById('bond-lovemap-guess').value.trim();
+  if (!myAnswer && !partnerGuess) { showToast('내용을 입력해주세요'); return; }
   if (!bond.lovemap) addRoomPoint('living');
-  bond.lovemap = newVal;
+  bond.lovemap = myAnswer;
   cache.setBond(today, bond);
   syncBond(today, bond);
-  // lovemap_cache에 오늘 답변 저장
+  // lovemap_cache에 오늘 두 답변 저장
   const user = cache.getUser();
   const lc = user.lovemapCache || {};
-  lc[today] = newVal;
+  lc[today] = { myAnswer, partnerGuess };
   user.lovemapCache = lc;
   cache.setUser(user);
   if (SB_READY && currentUid) {
@@ -1906,28 +1913,52 @@ async function loadPartnerLovemap() {
   if (!user?.partnerId || !SB_READY) { el.innerHTML = ''; return; }
   const today = todayStr();
   const bond = cache.getBond(today);
-  // 이미 오늘 맞춤 확인했으면 뱃지만 표시
-  if (bond.lovemapMatched) {
-    el.innerHTML = `<div class="lovemap-matched-badge">🎉 오늘 러브맵 성공! 거실 포인트 +1</div>`;
-    return;
-  }
+  const myCache = user.lovemapCache?.[today] || {};
+  const myGuess = myCache.partnerGuess || '';
   try {
     const { data } = await sb.from('users').select('lovemap_cache, name').eq('id', user.partnerId).single();
-    const partnerAnswer = data?.lovemap_cache?.[today];
+    const partnerCache = data?.lovemap_cache?.[today] || {};
+    const partnerActual = partnerCache.myAnswer || '';   // 파트너의 실제 답변
+    const partnerGuessAboutMe = partnerCache.partnerGuess || ''; // 파트너가 나에 대해 예상한 것
+    const myActual = myCache.myAnswer || '';
     const partnerName = data?.name || user.partnerName || '파트너';
-    if (!partnerAnswer) {
+
+    if (!partnerActual && !partnerGuessAboutMe) {
       el.innerHTML = `<div class="lovemap-waiting">💬 ${partnerName}님이 아직 답변하지 않았어요</div>`;
       return;
     }
-    el.innerHTML = `
-      <div class="lovemap-partner-box">
-        <div class="lovemap-partner-label">💑 ${partnerName}님의 답변</div>
-        <div class="lovemap-partner-answer">"${partnerAnswer}"</div>
-        <div class="lovemap-match-btns">
+
+    let html = '<div class="lovemap-partner-box">';
+    // 내 예상 vs 파트너 실제 답변
+    if (myGuess && partnerActual) {
+      html += `<div class="lovemap-partner-label">🔍 내 예상 vs ${partnerName}님의 실제 답변</div>`;
+      html += `<div style="font-size:12px;color:var(--text-sub);margin-bottom:4px">내 예상</div>`;
+      html += `<div class="lovemap-partner-answer">"${myGuess}"</div>`;
+      html += `<div style="font-size:12px;color:var(--primary);font-weight:700;margin-bottom:4px">${partnerName}님의 실제 답변</div>`;
+      html += `<div class="lovemap-partner-answer">"${partnerActual}"</div>`;
+      if (!bond.lovemapMatched) {
+        html += `<div class="lovemap-match-btns">
           <button class="lovemap-match-btn yes" onclick="lovemapMatch()">✅ 맞았어요! +1 포인트</button>
           <button class="lovemap-match-btn no" onclick="lovemapNoMatch('${partnerName}')">❌ 달랐어요</button>
-        </div>
-      </div>`;
+        </div>`;
+      } else {
+        html += `<div class="lovemap-matched-badge">🎉 오늘 러브맵 성공! 거실 포인트 +1</div>`;
+      }
+    } else if (partnerActual) {
+      html += `<div class="lovemap-partner-label">💑 ${partnerName}님의 실제 답변</div>`;
+      html += `<div class="lovemap-partner-answer">"${partnerActual}"</div>`;
+    }
+    // 파트너가 나에 대해 예상한 것 vs 내 실제 답변
+    if (partnerGuessAboutMe && myActual) {
+      html += `<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">`;
+      html += `<div class="lovemap-partner-label">💌 ${partnerName}님이 나에 대해 예상한 답변</div>`;
+      html += `<div class="lovemap-partner-answer">"${partnerGuessAboutMe}"</div>`;
+      html += `<div style="font-size:12px;color:var(--text-sub);margin-bottom:4px">나의 실제 답변</div>`;
+      html += `<div class="lovemap-partner-answer">"${myActual}"</div>`;
+      html += `</div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
   } catch(e) { el.innerHTML = ''; }
 }
 
