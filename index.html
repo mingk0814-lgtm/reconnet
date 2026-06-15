@@ -209,7 +209,15 @@ textarea { resize: none; }
 /* ══ AUTH ══ */
 #screen-auth { background: var(--bg); }
 .auth-hero { position: relative; width: 100%; height: 280px; overflow: hidden; background: linear-gradient(135deg, #FFD4C2 0%, #FFBCAD 40%, #FFA59A 70%, #FF8E8E 100%); }
-.auth-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.1) 0%, rgba(255,245,240,0.7) 75%, var(--bg) 100%); }
+.auth-hero-overlay { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(255,255,255,0.05) 0%, rgba(255,245,240,0.6) 70%, var(--bg) 100%); }
+.auth-hero-deco { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding-bottom: 48px; gap: 10px; }
+.auth-hero-main-emoji { font-size: 72px; animation: heroFloat 3.5s ease-in-out infinite; filter: drop-shadow(0 4px 12px rgba(255,100,100,0.3)); }
+.auth-hero-sub { display: flex; gap: 18px; }
+.auth-hero-sub span { animation: heroFloat 3.5s ease-in-out infinite; }
+.auth-hero-sub span:nth-child(1) { font-size: 26px; animation-delay: 0.4s; }
+.auth-hero-sub span:nth-child(2) { font-size: 20px; animation-delay: 0.8s; }
+.auth-hero-sub span:nth-child(3) { font-size: 26px; animation-delay: 1.2s; }
+@keyframes heroFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
 .auth-hero-text { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; padding: 0 24px; }
 .auth-hero-text h1 { font-size: 30px; font-weight: 800; color: var(--primary); letter-spacing: -0.04em; margin-bottom: 4px; text-shadow: 0 1px 8px rgba(255,255,255,0.8); }
 .auth-hero-text p { font-size: 14px; color: var(--text-sub); font-weight: 500; }
@@ -532,6 +540,10 @@ textarea { resize: none; }
   <!-- ═══ 로그인 / 회원가입 ═══ -->
   <div id="screen-onboard" class="screen no-nav">
     <div class="auth-hero">
+      <div class="auth-hero-deco">
+        <div class="auth-hero-main-emoji">💑</div>
+        <div class="auth-hero-sub"><span>💕</span><span>✨</span><span>💕</span></div>
+      </div>
       <div class="auth-hero-overlay"></div>
       <div class="auth-hero-text">
         <h1>RE:CONNECT</h1>
