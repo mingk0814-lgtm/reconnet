@@ -1870,6 +1870,14 @@ function getHouseEmoji() {
 }
 
 function renderHouseScreen() {
+  // 정원 포인트를 버킷리스트 실제 개수로 동기화
+  const house = cache.getHouse();
+  const bucketCount = (house.bucketList || []).length;
+  if ((house.rooms?.garden || 0) !== bucketCount) {
+    if (!house.rooms) house.rooms = { living:0, kitchen:0, bedroom:0, entrance:0, garden:0 };
+    house.rooms.garden = bucketCount;
+    cache.setHouse(house);
+  }
   renderHouseVisual();
   renderRoomCards();
   renderHorsemenBattle();
@@ -2074,6 +2082,7 @@ function addBucketItem() {
   syncHouse();
   renderBucketList();
   renderHouseVisual();
+  renderRoomCards();
   showToast('버킷리스트 추가! 정원 포인트 +1 🌳');
 }
 
