@@ -1067,9 +1067,15 @@ async function loadAllFromSupabase(uid) {
     ]);
     if (u && !error) {
       const usr = userFromRow(u);
-      // localStorage에 없을 때만 덮어씀 (재로그인 시 로컬 데이터 보존)
       const local = cache.getUser();
-      if (!local || !local.name) cache.setUser(usr);
+      if (!local || !local.name) {
+        cache.setUser(usr);
+      } else {
+        // 파트너 연결 정보는 항상 Supabase 기준으로 동기화
+        if (usr.partnerId) { local.partnerId = usr.partnerId; local.partnerName = usr.partnerName || local.partnerName; }
+        if (usr.partnerCode) local.partnerCode = usr.partnerCode;
+        cache.setUser(local);
+      }
     }
   } catch(e) { console.warn('Supabase load (using local cache):', e.message); }
 }
@@ -1909,8 +1915,19 @@ async function saveLovemap() {
 async function loadPartnerLovemap() {
   const el = document.getElementById('lovemap-partner-result');
   if (!el) return;
-  const user = cache.getUser();
-  if (!user?.partnerId || !SB_READY) { el.innerHTML = ''; return; }
+  let user = cache.getUser();
+  if (!SB_READY) { el.innerHTML = ''; return; }
+  // partnerId 없으면 Supabase에서 최신 정보 가져오기
+  if (!user?.partnerId && currentUid) {
+    try {
+      const { data } = await sb.from('users').select('partner_id, name').eq('id', currentUid).single();
+      if (data?.partner_id) {
+        user.partnerId = data.partner_id;
+        cache.setUser(user);
+      }
+    } catch(e) {}
+  }
+  if (!user?.partnerId) { el.innerHTML = ''; return; }
   const today = todayStr();
   const bond = cache.getBond(today);
   const myCache = user.lovemapCache?.[today] || {};
