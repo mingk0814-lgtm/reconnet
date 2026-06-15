@@ -1853,6 +1853,8 @@ function addRoomPoint(roomId) {
   const room = ROOMS.find(r => r.id === roomId);
   if (prev < threshold && house.rooms[roomId] >= threshold) {
     showToast(`${room.emoji} ${room.name} 완성! 🎉`);
+  } else if (prev < threshold) {
+    showToast(`${room.emoji} ${room.name} 포인트 +1 (${house.rooms[roomId]}/${threshold})`);
   }
 }
 
