@@ -453,6 +453,15 @@ textarea { resize: none; }
 .bond-lovemap-textarea { width: 100%; min-height: 90px; padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; color: var(--text); background: var(--bg); line-height: 1.6; transition: border-color 0.2s; }
 .bond-lovemap-textarea:focus { border-color: var(--primary); }
 .bond-lovemap-textarea::placeholder { color: #ccc; }
+.lovemap-partner-box { margin-top: 12px; background: var(--primary-light); border-radius: var(--radius-sm); padding: 14px 16px; }
+.lovemap-partner-label { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+.lovemap-partner-answer { font-size: 14px; color: var(--text); line-height: 1.6; font-style: italic; margin-bottom: 12px; }
+.lovemap-match-btns { display: flex; gap: 8px; }
+.lovemap-match-btn { flex: 1; padding: 10px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 700; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; }
+.lovemap-match-btn.yes { background: var(--primary); color: #fff; }
+.lovemap-match-btn.no { background: var(--bg); color: var(--text-sub); border-color: var(--border); }
+.lovemap-matched-badge { margin-top: 12px; background: #E8F5E9; border-radius: var(--radius-sm); padding: 10px 14px; text-align: center; font-size: 13px; font-weight: 700; color: #2E7D32; }
+.lovemap-waiting { margin-top: 12px; font-size: 13px; color: var(--text-sub); text-align: center; padding: 10px 0; }
 
 /* ══ 파트너 연결 ══ */
 .partner-connect-card { margin: 0 16px 12px; background: var(--bg-card); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-sm); }
@@ -784,6 +793,7 @@ textarea { resize: none; }
       <div class="bond-lovemap-q" id="bond-lovemap-q"></div>
       <textarea class="bond-lovemap-textarea" id="bond-lovemap-input" placeholder="여기에 적어보세요..."></textarea>
       <button class="section-save-btn" onclick="saveLovemap()" style="margin:8px 0 0">저장하기</button>
+      <div id="lovemap-partner-result"></div>
     </div>
   </div>
 
@@ -1780,6 +1790,8 @@ function renderBondScreen() {
   document.getElementById('bond-lovemap-q').textContent = LOVEMAP_QUESTIONS[qIdx];
   document.getElementById('bond-lovemap-input').value = bond.lovemap || '';
   document.getElementById('horseman-antidote').style.display = 'none';
+  document.getElementById('lovemap-partner-result').innerHTML = '';
+  if (bond.lovemap) loadPartnerLovemap();
 }
 
 function updateBondGauge(bond) {
@@ -1864,15 +1876,80 @@ function toggleHorseman(name) {
   }
 }
 
-function saveLovemap() {
+async function saveLovemap() {
   const today = todayStr();
   const bond = cache.getBond(today);
   const newVal = document.getElementById('bond-lovemap-input').value.trim();
-  if (newVal && !bond.lovemap) addRoomPoint('living');
+  if (!newVal) { showToast('내용을 입력해주세요'); return; }
+  if (!bond.lovemap) addRoomPoint('living');
   bond.lovemap = newVal;
   cache.setBond(today, bond);
   syncBond(today, bond);
+  // lovemap_cache에 오늘 답변 저장
+  const user = cache.getUser();
+  const lc = user.lovemapCache || {};
+  lc[today] = newVal;
+  user.lovemapCache = lc;
+  cache.setUser(user);
+  if (SB_READY && currentUid) {
+    sb.from('users').upsert({ id:currentUid, name:user.name||'', partner_code:user.partnerCode||null, lovemap_cache:lc })
+      .then(({error:e}) => { if(e) console.warn('lovemap sync:', e.message); });
+  }
   showToast('러브맵 저장 완료 🗺️');
+  await loadPartnerLovemap();
+}
+
+async function loadPartnerLovemap() {
+  const el = document.getElementById('lovemap-partner-result');
+  if (!el) return;
+  const user = cache.getUser();
+  if (!user?.partnerId || !SB_READY) { el.innerHTML = ''; return; }
+  const today = todayStr();
+  const bond = cache.getBond(today);
+  // 이미 오늘 맞춤 확인했으면 뱃지만 표시
+  if (bond.lovemapMatched) {
+    el.innerHTML = `<div class="lovemap-matched-badge">🎉 오늘 러브맵 성공! 거실 포인트 +1</div>`;
+    return;
+  }
+  try {
+    const { data } = await sb.from('users').select('lovemap_cache, name').eq('id', user.partnerId).single();
+    const partnerAnswer = data?.lovemap_cache?.[today];
+    const partnerName = data?.name || user.partnerName || '파트너';
+    if (!partnerAnswer) {
+      el.innerHTML = `<div class="lovemap-waiting">💬 ${partnerName}님이 아직 답변하지 않았어요</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div class="lovemap-partner-box">
+        <div class="lovemap-partner-label">💑 ${partnerName}님의 답변</div>
+        <div class="lovemap-partner-answer">"${partnerAnswer}"</div>
+        <div class="lovemap-match-btns">
+          <button class="lovemap-match-btn yes" onclick="lovemapMatch()">✅ 맞았어요! +1 포인트</button>
+          <button class="lovemap-match-btn no" onclick="lovemapNoMatch('${partnerName}')">❌ 달랐어요</button>
+        </div>
+      </div>`;
+  } catch(e) { el.innerHTML = ''; }
+}
+
+function lovemapMatch() {
+  const today = todayStr();
+  const bond = cache.getBond(today);
+  if (!bond.lovemapMatched) {
+    bond.lovemapMatched = true;
+    cache.setBond(today, bond);
+    addRoomPoint('living');
+  }
+  const el = document.getElementById('lovemap-partner-result');
+  if (el) el.innerHTML = `<div class="lovemap-matched-badge">🎉 오늘 러브맵 성공! 거실 포인트 +1</div>`;
+}
+
+function lovemapNoMatch(partnerName) {
+  const el = document.getElementById('lovemap-partner-result');
+  const box = el?.querySelector('.lovemap-partner-box');
+  if (box) {
+    box.querySelector('.lovemap-match-btns').innerHTML =
+      `<p style="font-size:13px;color:var(--text-sub);text-align:center;width:100%">💌 ${partnerName}님은 이렇게 답변했어요!<br>서로의 생각을 나눠보세요 😊</p>`;
+  }
 }
 
 /* ══════════════════════════════════════
