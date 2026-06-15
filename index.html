@@ -440,6 +440,15 @@ textarea { resize: none; }
 .horseman-card.selected .hc-name { color: #FF4444; }
 .horseman-antidote { background: #FFFDE7; border: 2px solid #FFD600; border-radius: var(--radius-sm); padding: 14px 16px; font-size: 14px; color: #795548; line-height: 1.6; margin-top: 4px; }
 .horseman-antidote strong { color: #E65100; display: block; margin-bottom: 4px; }
+.repair-horseman-item { margin: 0 20px 10px; border: 2px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; transition: border-color 0.2s; }
+.repair-horseman-item.checked { border-color: #FF6B6B; }
+.repair-horseman-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; background: var(--bg-card); }
+.repair-horseman-header .rh-emoji { font-size: 22px; }
+.repair-horseman-header .rh-name { flex: 1; font-size: 14px; font-weight: 700; color: var(--text); }
+.repair-horseman-header .rh-check { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s; }
+.repair-horseman-item.checked .rh-check { background: #FF6B6B; border-color: #FF6B6B; color: #fff; }
+.repair-horseman-antidote { background: #FFFDE7; border-top: 2px solid #FFD600; padding: 12px 16px; font-size: 13px; color: #795548; line-height: 1.6; }
+.repair-horseman-antidote strong { color: #E65100; font-size: 12px; display: block; margin-bottom: 3px; }
 .bond-lovemap-q { background: linear-gradient(135deg, var(--primary-light), #FFF3E0); border-radius: var(--radius-sm); padding: 14px 16px; font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 10px; line-height: 1.5; }
 .bond-lovemap-textarea { width: 100%; min-height: 90px; padding: 12px 14px; border: 2px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; color: var(--text); background: var(--bg); line-height: 1.6; transition: border-color 0.2s; }
 .bond-lovemap-textarea:focus { border-color: var(--primary); }
@@ -700,6 +709,11 @@ textarea { resize: none; }
         <div class="direct-input-wrap"><input type="text" class="direct-input" id="need-direct-input" placeholder="직접 입력 (예: 그냥 안아주길 바랐어)"></div>
       </div>
       <div class="repair-step" data-step="4">
+        <div class="repair-step-title">지금 이 말을 쓰려 하나요?</div>
+        <div class="repair-step-sub">해당하는 패턴이 있으면 체크해보세요. 없으면 그냥 넘어가도 돼요</div>
+        <div id="repair-horsemen-list"></div>
+      </div>
+      <div class="repair-step" data-step="5">
         <div class="repair-step-title">나의 마음을 전달해보세요</div>
         <div class="repair-step-sub">감정 표현 문장이 만들어졌어요</div>
         <div class="message-card"><div class="msg-label">✨ 감정 표현 메시지</div><div class="msg-text" id="generated-message"></div></div>
@@ -709,7 +723,7 @@ textarea { resize: none; }
         </div>
         <div class="relax-hint">🌬️ 아직 마음이 복잡하다면 릴렉스 모드를 해보세요</div>
       </div>
-      <div class="repair-step" data-step="5">
+      <div class="repair-step" data-step="6">
         <div class="repair-step-title">잠깐 숨을 고르세요</div>
         <div class="repair-step-sub">4-7-8 호흡법으로 마음을 진정시켜요</div>
         <div class="breath-container">
@@ -723,7 +737,7 @@ textarea { resize: none; }
           <button class="btn btn-primary" id="breath-start-btn" onclick="startBreathing()">호흡 시작하기</button>
         </div>
       </div>
-      <div class="repair-step" data-step="6">
+      <div class="repair-step" data-step="7">
         <div class="repair-step-title">우리의 갈등 패턴</div>
         <div class="repair-step-sub">기록이 쌓일수록 더 정확해져요</div>
         <div id="pattern-content"></div>
@@ -1202,7 +1216,7 @@ function goBack() { if (previousScreen) { showScreen(previousScreen); previousSc
 function navTo(t) { if(t==='daily'){renderCalendar();updateTodayCard();showScreen('screen-daily');} else if(t==='house') goHouse(); else if(t==='bond') goBond(); else if(t==='profile') goProfile(); }
 function goProfile() { renderProfile(); showScreen('screen-profile'); }
 function goRepair() {
-  Object.assign(repairState, {step:1,situation:'',situationType:'',emotion:'',need:'',breathRunning:false});
+  Object.assign(repairState, {step:1,situation:'',situationType:'',emotion:'',need:'',horsemenChecked:[],breathRunning:false,breathCycle:0});
   renderRepairStep(1); showScreen('screen-repair');
 }
 
@@ -1487,8 +1501,8 @@ function saveConnect() {
 /* ══════════════════════════════════════
    13. 리페어
 ══════════════════════════════════════ */
-const repairState={step:1,situation:'',situationType:'',emotion:'',need:'',breathRunning:false,breathCycle:0};
-const REPAIR_TOTAL=6;
+const repairState={step:1,situation:'',situationType:'',emotion:'',need:'',horsemenChecked:[],breathRunning:false,breathCycle:0};
+const REPAIR_TOTAL=7;
 
 function renderRepairStep(n) {
   repairState.step=n;
@@ -1498,7 +1512,7 @@ function renderRepairStep(n) {
   document.getElementById('repair-prev-btn').style.display=n===1?'none':'block';
   document.getElementById('repair-next-btn').textContent=n===REPAIR_TOTAL?'완료':'다음';
   if(n===1)renderStep1();if(n===2)renderStep2();if(n===3)renderStep3();
-  if(n===4)renderStep4();if(n===5)renderStep5();if(n===6)renderStep6();
+  if(n===4)renderStep4Horsemen();if(n===5)renderStep5();if(n===6)renderStep6();if(n===7)renderStep7();
 }
 
 function renderStep1() {
@@ -1542,17 +1556,40 @@ function renderStep3() {
   di.value=REPAIR_NEEDS.some(n=>n.text===repairState.need)?'':repairState.need;
   di.oninput=()=>{repairState.need=di.value;document.querySelectorAll('.need-card').forEach(c=>c.classList.remove('selected'));};
 }
-function renderStep4() {
+function renderStep4Horsemen() {
+  const el = document.getElementById('repair-horsemen-list');
+  if (!el) return;
+  el.innerHTML = '';
+  HORSEMEN.forEach(h => {
+    const checked = repairState.horsemenChecked.includes(h.name);
+    const div = document.createElement('div');
+    div.className = 'repair-horseman-item' + (checked ? ' checked' : '');
+    div.innerHTML = `
+      <div class="repair-horseman-header" onclick="toggleRepairHorseman('${h.name}')">
+        <span class="rh-emoji">${h.emoji}</span>
+        <span class="rh-name">${h.name}</span>
+        <div class="rh-check">${checked ? '✓' : ''}</div>
+      </div>
+      ${checked ? `<div class="repair-horseman-antidote"><strong>💊 대안 표현</strong>${h.detail}</div>` : ''}
+    `;
+    el.appendChild(div);
+  });
+}
+function toggleRepairHorseman(name) {
+  const idx = repairState.horsemenChecked.indexOf(name);
+  if (idx === -1) repairState.horsemenChecked.push(name);
+  else repairState.horsemenChecked.splice(idx, 1);
+  renderStep4Horsemen();
+}
+function renderStep5() {
   const si=document.getElementById('situation-input'); if(si)repairState.situation=si.value.trim();
   const ed=document.getElementById('emotion-direct-input'); if(ed?.value)repairState.emotion=ed.value.trim();
   const nd=document.getElementById('need-direct-input'); if(nd?.value)repairState.need=nd.value.trim();
   const msg=generateMessage(); document.getElementById('generated-message').textContent=msg;
-  const record={date:todayStr(),situation:repairState.situation,situationType:repairState.situationType,emotion:repairState.emotion,need:repairState.need,message:msg};
+  const record={date:todayStr(),situation:repairState.situation,situationType:repairState.situationType,emotion:repairState.emotion,need:repairState.need,horsemen:repairState.horsemenChecked,message:msg};
   const history=cache.getRepairHistory(); history.push(record);
   cache.setRepairHistory(history); syncRepairRecord(record);
-  // 오늘 온도에 마찰 +1 반영
   const bond=cache.getBond(todayStr()); bond.friction=(bond.friction||0)+1; cache.setBond(todayStr(),bond);
-  // 현관 포인트 +1
   addRoomPoint('entrance');
 }
 function generateMessage() {
@@ -1562,7 +1599,7 @@ function generateMessage() {
 function copyMessage() { copyToClipboard(document.getElementById('generated-message').textContent); }
 function shareMessage() { const t=document.getElementById('generated-message').textContent; if(navigator.share)navigator.share({text:t}).catch(()=>copyToClipboard(t));else copyToClipboard(t); }
 
-function renderStep5() {
+function renderStep6() {
   repairState.breathCycle=0; repairState.breathRunning=false;
   document.getElementById('breath-text').textContent='준비되셨나요?';
   document.getElementById('breath-sub').textContent='버튼을 눌러 시작하세요';
@@ -1608,7 +1645,7 @@ function runBreathCycle() {
     },7000);
   },4000);
 }
-function renderStep6() {
+function renderStep7() {
   const history=cache.getRepairHistory(), content=document.getElementById('pattern-content');
   if(history.length<3){content.innerHTML=`<div class="pattern-empty"><div class="p-emoji">📊</div><h4>기록이 조금 더 필요해요</h4><p>리페어 모드를 3번 이상 사용하면<br>갈등 패턴을 분석해드려요.<br><br>현재 <strong>${history.length}개</strong> 기록됨</p></div>`;return;}
   const cntMap=arr=>arr.reduce((a,v)=>{if(v)a[v]=(a[v]||0)+1;return a;},{});
